@@ -1,13 +1,15 @@
 import time
 import random
-from maze.mazegen import MazeGenerator, InvalidDistinationFor42Path
+import sys
+from maze.mazegen import (MazeGenerator, InvalidDistinationFor42Path,
+                          InvalidEntryExitPoint)
 from maze.pathfinder import pathfinder
 from utils.errors import InvalidCoordinates
 
 try:
     from mlx import Mlx
 except ModuleNotFoundError:
-    raise ModuleNotFoundError(
+    ModuleNotFoundError(
         "❌ Error: MiniLibX (mlx) module not found.\n"
         "👉 Make sure you:\n"
         "   - Built MiniLibX with `make`\n"
@@ -15,10 +17,11 @@ except ModuleNotFoundError:
     )
 
 
-def mlx_render(width, length, ENTRY, EXIT):
+def mlx_render(width, length, ENTRY, EXIT, out_file: str, is_perfect: bool,
+               seed: bool):
     width_pixel = width * 40
     length_pixel = length * 40
-    if width_pixel > 1920 or length_pixel > 1000: 
+    if width_pixel > 1920 or length_pixel > 1000:
         raise InvalidCoordinates(
                 "❌ Error: Window size exceeds screen resolution.\n"
                 f"Requested: {width}x{length}\n"
@@ -31,17 +34,33 @@ def mlx_render(width, length, ENTRY, EXIT):
             "Minimum allowed: 6x6"
         )
 
-    mlx1 = Mlx()
-    k = mlx1.mlx_init()
-
-    win = mlx1.mlx_new_window(k, width_pixel, length_pixel, "YEB&YEN Maze_gen")
-    maze = MazeGenerator(width, length)
+    output_file = out_file
+    maze = MazeGenerator(width, length, ENTRY, EXIT, out_file)
     try:
-        maze.creat_maze_bakctracker_algo()
+        if seed:
+            random.seed(1)
+        if not is_perfect:
+            maze.creat_maze_prims_algo()
+        else:
+            maze.creat_maze_bakctracker_algo()
+        maze.creat_output_file(pathfinder(maze.maze, ENTRY, EXIT, width,
+                                          length))
+    except InvalidEntryExitPoint as e:
+        print(f"Error: {e}")
+        sys.exit()
+
     except InvalidDistinationFor42Path as e:
         print(e)
-        maze.remove_walls()
+        if not is_perfect:
+            maze.remove_walls_prims_algo()
+        else:
+            maze.remove_walls_backtracker_algo()
+        maze.creat_output_file(pathfinder(maze.maze, ENTRY, EXIT, width,
+                                          length))
 
+    mlx1 = Mlx()
+    k = mlx1.mlx_init()
+    win = mlx1.mlx_new_window(k, width_pixel, length_pixel, "YEB&YEN Maze_gen")
     mz = maze.maze
     img = mlx1.mlx_new_image(k, width_pixel, length_pixel)
     result = mlx1.mlx_get_data_addr(img)
@@ -53,7 +72,7 @@ def mlx_render(width, length, ENTRY, EXIT):
         if 0 <= x < width_pixel and 0 <= y < length_pixel:
             offset = y * size_line + x * 4
             if offset + 4 <= len(data):
-                byte = color.to_bytes(4, 'little')
+                byte = color.to_bytes(3, 'little')
                 data[offset] = byte[0]
                 data[offset + 1] = byte[1]
                 data[offset + 2] = byte[2]
@@ -171,6 +190,7 @@ def mlx_render(width, length, ENTRY, EXIT):
                 if cell.east:
                     for y in range(y_offset, y_offset + CELL):
                         put_pixel(x_offset + CELL - 1, y, color)
+
                 x_offset += CELL
             y_offset += CELL
 
@@ -191,12 +211,27 @@ def mlx_render(width, length, ENTRY, EXIT):
         pl_x = ENTRY[0] * 40 + 10
         pl_y = ENTRY[1] * 40 + 10
         nonlocal mz
-        maze = MazeGenerator(width, length)
+        maze = MazeGenerator(width, length, ENTRY, EXIT, output_file)
+        if seed:
+            random.seed(1)
         try:
-            maze.creat_maze_bakctracker_algo()
+            if not is_perfect:
+                maze.creat_maze_prims_algo()
+            else:
+                maze.creat_maze_bakctracker_algo()
+            maze.creat_output_file(pathfinder(maze.maze, ENTRY, EXIT, width,
+                                              length))
         except InvalidDistinationFor42Path as e:
             print(e)
-            maze.remove_walls()
+            if not is_perfect:
+                maze.remove_walls_prims_algo()
+            else:
+                maze.remove_walls_backtracker_algo()
+            maze.creat_output_file(pathfinder(maze.maze, ENTRY, EXIT, width,
+                                              length))
+        except InvalidEntryExitPoint as e:
+            print(f"Error: {e}")
+            sys.exit()
 
         new_maze = maze.maze
         back_img()
@@ -248,6 +283,13 @@ def mlx_render(width, length, ENTRY, EXIT):
                 k, win, path_start_img, ENTRY[0] * 40 + 10, ENTRY[1] * 40 + 10)
 
         if keycode == 112:
+            back_img()
+            back_img()
+            mlx1.mlx_put_image_to_window(
+                k, win, path_start_img, ENTRY[0] * 40 + 10, ENTRY[1] * 40 + 10)
+            mlx1.mlx_put_image_to_window(
+                k, win, path_end_img, EXIT[0] * 40 + 10, EXIT[1] * 40 + 10)
+            player(pl_x, pl_y)
             draw_path()
 
         if keycode == 103:
